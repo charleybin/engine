@@ -1,4 +1,4 @@
-// Copyright 2017 The Flutter Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,6 @@ TEST(DartVM, SimpleInitialization) {
   ASSERT_TRUE(vm);
   ASSERT_EQ(vm, DartVM::ForProcess(settings));
   ASSERT_FALSE(DartVM::IsRunningPrecompiledCode());
-  ASSERT_EQ(vm->GetPlatformKernel().GetSize(), 0u);
 }
 
 TEST(DartVM, SimpleIsolateNameServer) {

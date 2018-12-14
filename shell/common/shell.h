@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -182,6 +182,10 @@ class Shell final : public PlatformView::Delegate,
   // |shell::Engine::Delegate|
   void OnPreEngineRestart() override;
 
+  // |shell::Engine::Delegate|
+  void UpdateIsolateDescription(const std::string isolate_name,
+                                int64_t isolate_port) override;
+
   // |blink::ServiceProtocol::Handler|
   fml::RefPtr<fml::TaskRunner> GetServiceProtocolHandlerTaskRunner(
       fml::StringView method) const override;
@@ -218,6 +222,11 @@ class Shell final : public PlatformView::Delegate,
 
   // Service protocol handler
   bool OnServiceProtocolSetAssetBundlePath(
+      const blink::ServiceProtocol::Handler::ServiceProtocolMap& params,
+      rapidjson::Document& response);
+
+  // Service protocol handler
+  bool OnServiceProtocolGetDisplayRefreshRate(
       const blink::ServiceProtocol::Handler::ServiceProtocolMap& params,
       rapidjson::Document& response);
 

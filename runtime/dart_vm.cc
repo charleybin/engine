@@ -1,4 +1,4 @@
-// Copyright 2017 The Flutter Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 #include "flutter/runtime/dart_isolate.h"
 #include "flutter/runtime/dart_service_isolate.h"
 #include "flutter/runtime/start_up.h"
-#include "third_party/dart/runtime/bin/embedded_dart_io.h"
+#include "third_party/dart/runtime/include/bin/dart_io_api.h"
 #include "third_party/tonic/converter/dart_converter.h"
 #include "third_party/tonic/dart_class_library.h"
 #include "third_party/tonic/dart_class_provider.h"
@@ -32,10 +32,6 @@
 #include "third_party/tonic/logging/dart_error.h"
 #include "third_party/tonic/scopes/dart_api_scope.h"
 #include "third_party/tonic/typed_data/uint8_list.h"
-
-#ifdef ERROR
-#undef ERROR
-#endif
 
 namespace dart {
 namespace observatory {
@@ -64,7 +60,6 @@ static const char* kDartLanguageArgs[] = {
     // clang-format off
     "--enable_mirrors=false",
     "--background_compilation",
-    "--await_is_keyword",
     "--causal_async_stacks",
     // clang-format on
 };
@@ -81,30 +76,6 @@ static const char* kDartWriteProtectCodeArgs[] = {
 static const char* kDartAssertArgs[] = {
     // clang-format off
     "--enable_asserts",
-    // clang-format on
-};
-
-static const char* kDartCheckedModeArgs[] = {
-    // clang-format off
-    "--enable_type_checks",
-    "--error_on_bad_type",
-    "--error_on_bad_override",
-    // clang-format on
-};
-
-static const char* kDartModeArgs[] = {
-    // clang-format off
-    "--no-strong",
-    "--no-reify_generic_functions",
-    "--no-sync_async",
-    // clang-format on
-};
-
-static const char* kDart2ModeArgs[] = {
-    // clang-format off
-    "--strong",
-    "--reify_generic_functions",
-    "--sync_async",
     // clang-format on
 };
 
@@ -164,7 +135,9 @@ Dart_Handle GetVMServiceAssetsArchiveCallback() {
     (FLUTTER_RUNTIME_MODE == FLUTTER_RUNTIME_MODE_DYNAMIC_RELEASE)
   return nullptr;
 #elif OS_FUCHSIA
-  fml::FileMapping mapping("pkg/data/observatory.tar", false /* executable */);
+  fml::UniqueFD fd = fml::OpenFile("pkg/data/observatory.tar", false,
+                                   fml::FilePermission::kRead);
+  fml::FileMapping mapping(fd, {fml::FileMapping::Protection::kRead});
   if (mapping.GetSize() == 0 || mapping.GetMapping() == nullptr) {
     FML_LOG(ERROR) << "Fail to load Observatory archive";
     return nullptr;
@@ -318,8 +291,6 @@ DartVM::DartVM(const Settings& settings,
       vm_snapshot_(std::move(vm_snapshot)),
       isolate_snapshot_(std::move(isolate_snapshot)),
       shared_snapshot_(std::move(shared_snapshot)),
-      platform_kernel_mapping_(
-          std::make_unique<fml::FileMapping>(settings.platform_kernel_path)),
       weak_factory_(this) {
   TRACE_EVENT0("flutter", "DartVMInitializer");
   FML_DLOG(INFO) << "Attempting Dart VM launch for mode: "
@@ -342,7 +313,7 @@ DartVM::DartVM(const Settings& settings,
   // it does not recognize, it exits immediately.
   args.push_back("--ignore-unrecognized-flags");
 
-  for (const auto& profiler_flag :
+  for (auto* const profiler_flag :
        ProfilingFlags(settings.enable_dart_profiling)) {
     args.push_back(profiler_flag);
   }
@@ -354,18 +325,18 @@ DartVM::DartVM(const Settings& settings,
                 arraysize(kDartPrecompilationArgs));
   }
 
-  // Enable checked mode if we are not running precompiled code. We run non-
+  // Enable Dart assertions if we are not running precompiled code. We run non-
   // precompiled code only in the debug product mode.
-  bool use_checked_mode = !settings.dart_non_checked_mode;
+  bool enable_asserts = !settings.disable_dart_asserts;
 
 #if FLUTTER_RUNTIME_MODE == FLUTTER_RUNTIME_MODE_DYNAMIC_PROFILE || \
     FLUTTER_RUNTIME_MODE == FLUTTER_RUNTIME_MODE_DYNAMIC_RELEASE
-  use_checked_mode = false;
+  enable_asserts = false;
 #endif
 
 #if !OS_FUCHSIA
   if (IsRunningPrecompiledCode()) {
-    use_checked_mode = false;
+    enable_asserts = false;
   }
 #endif  // !OS_FUCHSIA
 
@@ -376,32 +347,8 @@ DartVM::DartVM(const Settings& settings,
               arraysize(kDartWriteProtectCodeArgs));
 #endif
 
-  const bool isolate_snapshot_is_dart_2 =
-      Dart_IsDart2Snapshot(isolate_snapshot_->GetData()->GetSnapshotPointer());
-
-  const bool is_preview_dart2 =
-      (platform_kernel_mapping_->GetSize() > 0) || isolate_snapshot_is_dart_2;
-
-  FML_DLOG(INFO) << "Dart 2 " << (is_preview_dart2 ? "is" : "is NOT")
-                 << " enabled. Platform kernel: "
-                 << static_cast<bool>(platform_kernel_mapping_->GetSize() > 0)
-                 << " Isolate Snapshot is Dart 2: "
-                 << isolate_snapshot_is_dart_2;
-
-  if (is_preview_dart2) {
-    PushBackAll(&args, kDart2ModeArgs, arraysize(kDart2ModeArgs));
-    if (use_checked_mode) {
-      PushBackAll(&args, kDartAssertArgs, arraysize(kDartAssertArgs));
-    }
-  } else {
-    PushBackAll(&args, kDartModeArgs, arraysize(kDartModeArgs));
-    if (use_checked_mode) {
-      FML_DLOG(INFO) << "Checked mode is ON";
-      PushBackAll(&args, kDartAssertArgs, arraysize(kDartAssertArgs));
-      PushBackAll(&args, kDartCheckedModeArgs, arraysize(kDartCheckedModeArgs));
-    } else {
-      FML_DLOG(INFO) << "Is not Dart 2 and Checked mode is OFF";
-    }
+  if (enable_asserts) {
+    PushBackAll(&args, kDartAssertArgs, arraysize(kDartAssertArgs));
   }
 
   if (settings.start_paused) {
@@ -494,10 +441,6 @@ DartVM::~DartVM() {
 
 const Settings& DartVM::GetSettings() const {
   return settings_;
-}
-
-const fml::Mapping& DartVM::GetPlatformKernel() const {
-  return *platform_kernel_mapping_.get();
 }
 
 const DartSnapshot& DartVM::GetVMSnapshot() const {
