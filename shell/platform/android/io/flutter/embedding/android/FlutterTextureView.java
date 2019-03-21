@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package io.flutter.embedding.engine.android;
+package io.flutter.embedding.android;
 
 import android.content.Context;
 import android.graphics.SurfaceTexture;
@@ -12,8 +12,6 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Surface;
 import android.view.TextureView;
-
-import java.nio.ByteBuffer;
 
 import io.flutter.embedding.engine.renderer.FlutterRenderer;
 
@@ -145,7 +143,7 @@ public class FlutterTextureView extends TextureView implements FlutterRenderer.R
     if (flutterRenderer != null) {
       // If we're attached to an Android window then we were rendering a Flutter UI. Now that
       // this FlutterTextureView is detached from the FlutterRenderer, we need to stop rendering.
-      if (isAttachedToWindow()) {
+      if (getWindowToken() != null) {
         disconnectSurfaceFromRenderer();
       }
 
@@ -181,16 +179,6 @@ public class FlutterTextureView extends TextureView implements FlutterRenderer.R
     }
 
     flutterRenderer.surfaceDestroyed();
-  }
-
-  @Override
-  public void updateCustomAccessibilityActions(ByteBuffer buffer, String[] strings) {
-    // TODO(mattcarroll): refactor RenderSurface to move this method somewhere else.
-  }
-
-  @Override
-  public void updateSemantics(ByteBuffer buffer, String[] strings) {
-    // TODO(mattcarroll): refactor RenderSurface to move this method somewhere else.
   }
 
   @Override
