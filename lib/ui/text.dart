@@ -21,31 +21,31 @@ class FontWeight {
   final int index;
 
   /// Thin, the least thick
-  static const FontWeight w100 = const FontWeight._(0);
+  static const FontWeight w100 = FontWeight._(0);
 
   /// Extra-light
-  static const FontWeight w200 = const FontWeight._(1);
+  static const FontWeight w200 = FontWeight._(1);
 
   /// Light
-  static const FontWeight w300 = const FontWeight._(2);
+  static const FontWeight w300 = FontWeight._(2);
 
   /// Normal / regular / plain
-  static const FontWeight w400 = const FontWeight._(3);
+  static const FontWeight w400 = FontWeight._(3);
 
   /// Medium
-  static const FontWeight w500 = const FontWeight._(4);
+  static const FontWeight w500 = FontWeight._(4);
 
   /// Semi-bold
-  static const FontWeight w600 = const FontWeight._(5);
+  static const FontWeight w600 = FontWeight._(5);
 
   /// Bold
-  static const FontWeight w700 = const FontWeight._(6);
+  static const FontWeight w700 = FontWeight._(6);
 
   /// Extra-bold
-  static const FontWeight w800 = const FontWeight._(7);
+  static const FontWeight w800 = FontWeight._(7);
 
   /// Black, the most thick
-  static const FontWeight w900 = const FontWeight._(8);
+  static const FontWeight w900 = FontWeight._(8);
 
   /// The default font weight.
   static const FontWeight normal = w400;
@@ -54,7 +54,7 @@ class FontWeight {
   static const FontWeight bold = w700;
 
   /// A list of all the font weights.
-  static const List<FontWeight> values = const <FontWeight>[
+  static const List<FontWeight> values = <FontWeight>[
     w100, w200, w300, w400, w500, w600, w700, w800, w900
   ];
 
@@ -63,7 +63,8 @@ class FontWeight {
   /// Rather than using fractional weights, the interpolation rounds to the
   /// nearest weight.
   ///
-  /// Any null values for `a` or `b` are interpreted as equivalent to [normal]
+  /// If both `a` and `b` are null, then this method will return null. Otherwise,
+  /// any null values for `a` or `b` are interpreted as equivalent to [normal]
   /// (also known as [w400]).
   ///
   /// The `t` argument represents position on the timeline, with 0.0 meaning
@@ -80,6 +81,8 @@ class FontWeight {
   /// an [AnimationController].
   static FontWeight lerp(FontWeight a, FontWeight b, double t) {
     assert(t != null);
+    if (a == null && b == null)
+      return null;
     return values[lerpDouble(a?.index ?? normal.index, b?.index ?? normal.index, t).round().clamp(0, 8)];
   }
 
@@ -150,7 +153,7 @@ class TextDecoration {
     int mask = 0;
     for (TextDecoration decoration in decorations)
       mask |= decoration._mask;
-    return new TextDecoration._(mask);
+    return TextDecoration._(mask);
   }
 
   final int _mask;
@@ -161,16 +164,16 @@ class TextDecoration {
   }
 
   /// Do not draw a decoration
-  static const TextDecoration none = const TextDecoration._(0x0);
+  static const TextDecoration none = TextDecoration._(0x0);
 
   /// Draw a line underneath each line of text
-  static const TextDecoration underline = const TextDecoration._(0x1);
+  static const TextDecoration underline = TextDecoration._(0x1);
 
   /// Draw a line above each line of text
-  static const TextDecoration overline = const TextDecoration._(0x2);
+  static const TextDecoration overline = TextDecoration._(0x2);
 
   /// Draw a line through each line of text
-  static const TextDecoration lineThrough = const TextDecoration._(0x4);
+  static const TextDecoration lineThrough = TextDecoration._(0x4);
 
   @override
   bool operator ==(dynamic other) {
@@ -280,7 +283,7 @@ Int32List _encodeTextStyle(
   Paint foreground,
   List<Shadow> shadows
 ) {
-  final Int32List result = new Int32List(8);
+  final Int32List result = Int32List(8);
   if (color != null) {
     result[0] |= 1 << 1;
     result[1] = color.value;
@@ -352,6 +355,11 @@ Int32List _encodeTextStyle(
 }
 
 /// An opaque object that determines the size, position, and rendering of text.
+///
+/// See also:
+///
+///  * [TextStyle](https://api.flutter.dev/flutter/painting/TextStyle-class.html), the class in the [painting] library.
+///
 class TextStyle {
   /// Creates a new TextStyle object.
   ///
@@ -400,7 +408,7 @@ class TextStyle {
     List<Shadow> shadows,
   }) : assert(color == null || foreground == null,
          'Cannot provide both a color and a foreground\n'
-         'The color argument is just a shorthand for "foreground: new Paint()..color = color".'
+         'The color argument is just a shorthand for "foreground: Paint()..color = color".'
        ),
        _encoded = _encodeTextStyle(
          color,
@@ -481,9 +489,9 @@ class TextStyle {
   @override
   String toString() {
     return 'TextStyle('
-             'color: ${              _encoded[0] & 0x00002 == 0x00002  ? new Color(_encoded[1])                  : "unspecified"}, '
-             'decoration: ${         _encoded[0] & 0x00004 == 0x00004  ? new TextDecoration._(_encoded[2])       : "unspecified"}, '
-             'decorationColor: ${    _encoded[0] & 0x00008 == 0x00008  ? new Color(_encoded[3])                  : "unspecified"}, '
+             'color: ${              _encoded[0] & 0x00002 == 0x00002  ? Color(_encoded[1])                  : "unspecified"}, '
+             'decoration: ${         _encoded[0] & 0x00004 == 0x00004  ? TextDecoration._(_encoded[2])       : "unspecified"}, '
+             'decorationColor: ${    _encoded[0] & 0x00008 == 0x00008  ? Color(_encoded[3])                  : "unspecified"}, '
              'decorationStyle: ${    _encoded[0] & 0x00010 == 0x00010  ? TextDecorationStyle.values[_encoded[4]] : "unspecified"}, '
              // The decorationThickness is not in encoded order in order to keep it near the other decoration properties.
              'decorationThickness: ${_encoded[0] & 0x00100 == 0x00100  ? _decorationThickness                    : "unspecified"}, '
@@ -539,7 +547,7 @@ Int32List _encodeParagraphStyle(
   String ellipsis,
   Locale locale,
 ) {
-  final Int32List result = new Int32List(6); // also update paragraph_builder.cc
+  final Int32List result = Int32List(6); // also update paragraph_builder.cc
   if (textAlign != null) {
     result[0] |= 1 << 1;
     result[1] = textAlign.index;
@@ -706,7 +714,7 @@ class ParagraphStyle {
 
   @override
   String toString() {
-    return '$runtimeType('
+    return 'ParagraphStyle('
              'textAlign: ${     _encoded[0] & 0x002 == 0x002 ? TextAlign.values[_encoded[1]]     : "unspecified"}, '
              'textDirection: ${ _encoded[0] & 0x004 == 0x004 ? TextDirection.values[_encoded[2]] : "unspecified"}, '
              'fontWeight: ${    _encoded[0] & 0x008 == 0x008 ? FontWeight.values[_encoded[3]]    : "unspecified"}, '
@@ -792,6 +800,10 @@ ByteData _encodeStrut(
   return ByteData.view(data.buffer, 0,  byteCount);
 }
 
+/// See also:
+///
+///  * [StrutStyle](https://api.flutter.dev/flutter/painting/StrutStyle-class.html), the class in the [painting] library.
+///
 class StrutStyle {
   /// Creates a new StrutStyle object.
   ///
@@ -1016,7 +1028,7 @@ class TextBox {
   final TextDirection direction;
 
   /// Returns a rect of the same size as this box.
-  Rect toRect() => new Rect.fromLTRB(left, top, right, bottom);
+  Rect toRect() => Rect.fromLTRB(left, top, right, bottom);
 
   /// The [left] edge of the box for left-to-right text; the [right] edge of the box for right-to-left text.
   ///
@@ -1127,7 +1139,7 @@ class TextPosition {
   /// The arguments must not be null (so the [offset] argument is required).
   const TextPosition({
     this.offset,
-    this.affinity: TextAffinity.downstream,
+    this.affinity = TextAffinity.downstream,
   }) : assert(offset != null),
        assert(affinity != null);
 
@@ -1162,7 +1174,7 @@ class TextPosition {
 
   @override
   String toString() {
-    return '$runtimeType(offset: $offset, affinity: $affinity)';
+    return 'TextPosition(offset: $offset, affinity: $affinity)';
   }
 }
 
@@ -1211,7 +1223,7 @@ class ParagraphConstraints {
   int get hashCode => width.hashCode;
 
   @override
-  String toString() => '$runtimeType(width: $width)';
+  String toString() => 'ParagraphConstraints(width: $width)';
 }
 
 /// Defines various ways to vertically bound the boxes returned by
@@ -1303,6 +1315,12 @@ class Paragraph extends NativeFieldWrapperClass2 {
   /// Valid only after [layout] has been called.
   double get height native 'Paragraph_height';
 
+  /// The distance from the left edge of the leftmost glyph to the right edge of
+  /// the rightmost glyph in the paragraph.
+  ///
+  /// Valid only after [layout] has been called.
+  double get longestLine native 'Paragraph_longestLine';
+
   /// The minimum width that this paragraph could be without failing to paint
   /// its contents within itself.
   ///
@@ -1359,7 +1377,7 @@ class Paragraph extends NativeFieldWrapperClass2 {
   /// Returns the text position closest to the given offset.
   TextPosition getPositionForOffset(Offset offset) {
     final List<int> encoded = _getPositionForOffset(offset.dx, offset.dy);
-    return new TextPosition(offset: encoded[0], affinity: TextAffinity.values[encoded[1]]);
+    return TextPosition(offset: encoded[0], affinity: TextAffinity.values[encoded[1]]);
   }
   List<int> _getPositionForOffset(double dx, double dy) native 'Paragraph_getPositionForOffset';
 
@@ -1392,7 +1410,7 @@ class Paragraph extends NativeFieldWrapperClass2 {
 /// paint it with [Canvas.drawParagraph].
 class ParagraphBuilder extends NativeFieldWrapperClass2 {
 
-  /// Creates a [ParagraphBuilder] object, which is used to create a
+  /// Creates a new [ParagraphBuilder] object, which is used to create a
   /// [Paragraph].
   @pragma('vm:entry-point')
   ParagraphBuilder(ParagraphStyle style) {
@@ -1485,7 +1503,7 @@ class ParagraphBuilder extends NativeFieldWrapperClass2 {
   void addText(String text) {
     final String error = _addText(text);
     if (error != null)
-      throw new ArgumentError(error);
+      throw ArgumentError(error);
   }
   String _addText(String text) native 'ParagraphBuilder_addText';
 

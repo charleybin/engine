@@ -16,7 +16,7 @@
 #include "flutter/fml/platform/darwin/scoped_nsobject.h"
 #include "flutter/shell/platform/darwin/ios/framework/Headers/FlutterChannels.h"
 
-namespace shell {
+namespace flutter {
 
 void FlutterPlatformViewsController::SetFlutterView(UIView* flutter_view) {
   flutter_view_.reset([flutter_view retain]);
@@ -100,12 +100,8 @@ void FlutterPlatformViewsController::OnDispose(FlutterMethodCall* call, FlutterR
                                details:[NSString stringWithFormat:@"view id: '%lld'", viewId]]);
     return;
   }
-
-  UIView* touch_interceptor = touch_interceptors_[viewId].get();
-  [touch_interceptor removeFromSuperview];
-  views_.erase(viewId);
-  touch_interceptors_.erase(viewId);
-  overlays_.erase(viewId);
+  // We wait for next submitFrame to dispose views.
+  views_to_dispose_.insert(viewId);
   result(nil);
 }
 
@@ -165,6 +161,13 @@ void FlutterPlatformViewsController::PrerollCompositeEmbeddedView(int view_id) {
   composition_order_.push_back(view_id);
 }
 
+NSObject<FlutterPlatformView>* FlutterPlatformViewsController::GetPlatformViewByID(int view_id) {
+  if (views_.empty()) {
+    return nil;
+  }
+  return views_[view_id].get();
+}
+
 std::vector<SkCanvas*> FlutterPlatformViewsController::GetCurrentCanvases() {
   std::vector<SkCanvas*> canvases;
   for (size_t i = 0; i < composition_order_.size(); i++) {
@@ -176,7 +179,7 @@ std::vector<SkCanvas*> FlutterPlatformViewsController::GetCurrentCanvases() {
 
 SkCanvas* FlutterPlatformViewsController::CompositeEmbeddedView(
     int view_id,
-    const flow::EmbeddedViewParams& params) {
+    const flutter::EmbeddedViewParams& params) {
   // TODO(amirh): assert that this is running on the platform thread once we support the iOS
   // embedded views thread configuration.
   // TODO(amirh): do nothing if the params didn't change.
@@ -206,6 +209,8 @@ void FlutterPlatformViewsController::Reset() {
 bool FlutterPlatformViewsController::SubmitFrame(bool gl_rendering,
                                                  GrContext* gr_context,
                                                  std::shared_ptr<IOSGLContext> gl_context) {
+  DisposeViews();
+
   bool did_submit = true;
   for (size_t i = 0; i < composition_order_.size(); i++) {
     int64_t view_id = composition_order_[i];
@@ -258,10 +263,28 @@ void FlutterPlatformViewsController::DetachUnusedLayers() {
 
   for (int64_t view_id : active_composition_order_) {
     if (composition_order_set.find(view_id) == composition_order_set.end()) {
+      if (touch_interceptors_.find(view_id) == touch_interceptors_.end()) {
+        continue;
+      }
       [touch_interceptors_[view_id].get() removeFromSuperview];
       [overlays_[view_id]->overlay_view.get() removeFromSuperview];
     }
   }
+}
+
+void FlutterPlatformViewsController::DisposeViews() {
+  if (views_to_dispose_.empty()) {
+    return;
+  }
+
+  for (int64_t viewId : views_to_dispose_) {
+    UIView* touch_interceptor = touch_interceptors_[viewId].get();
+    [touch_interceptor removeFromSuperview];
+    views_.erase(viewId);
+    touch_interceptors_.erase(viewId);
+    overlays_.erase(viewId);
+  }
+  views_to_dispose_.clear();
 }
 
 void FlutterPlatformViewsController::EnsureOverlayInitialized(int64_t overlay_id) {
@@ -307,7 +330,7 @@ void FlutterPlatformViewsController::EnsureGLOverlayInitialized(
   overlays_gr_context_ = gr_context;
 }
 
-}  // namespace shell
+}  // namespace flutter
 
 // This recognizers delays touch events from being dispatched to the responder chain until it failed
 // recognizing a gesture.

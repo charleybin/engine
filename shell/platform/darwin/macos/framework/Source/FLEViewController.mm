@@ -91,6 +91,16 @@ static const int kDefaultWindowFramebuffer = 0;
  */
 - (void)dispatchKeyEvent:(NSEvent*)event ofType:(NSString*)type;
 
+/**
+ * Initializes the KVO for user settings and passes the initial user settings to the engine.
+ */
+- (void)sendInitialSettings;
+
+/**
+ * Responsds to updates in the user settings and passes this data to the engine.
+ */
+- (void)onSettingsChanged:(NSNotification*)notification;
+
 @end
 
 #pragma mark - Static methods provided to engine configuration
@@ -181,6 +191,9 @@ static bool HeadlessOnMakeResourceCurrent(FLEViewController* controller) {
   // A message channel for passing key events to the Flutter engine. This should be replaced with
   // an embedding API; see Issue #47.
   FlutterBasicMessageChannel* _keyEventChannel;
+
+  // A message channel for sending user settings to the flutter engine.
+  FlutterBasicMessageChannel* _settingsChannel;
 }
 
 @dynamic view;
@@ -251,13 +264,6 @@ static void CommonInit(FLEViewController* controller) {
                              commandLineArguments:arguments];
 }
 
-- (id<FLEPluginRegistrar>)registrarForPlugin:(NSString*)pluginName {
-  // Currently, the view controller acts as the registrar for all plugins, so the
-  // name is ignored. It is part of the API to reduce churn in the future when
-  // aligning more closely with the Flutter registrar system.
-  return self;
-}
-
 #pragma mark - Framework-internal methods
 
 - (void)addKeyResponder:(NSResponder*)responder {
@@ -303,6 +309,10 @@ static void CommonInit(FLEViewController* controller) {
   _textInputPlugin = [[FLETextInputPlugin alloc] initWithViewController:self];
   _keyEventChannel =
       [FlutterBasicMessageChannel messageChannelWithName:@"flutter/keyevent"
+                                         binaryMessenger:self
+                                                   codec:[FlutterJSONMessageCodec sharedInstance]];
+  _settingsChannel =
+      [FlutterBasicMessageChannel messageChannelWithName:@"flutter/settings"
                                          binaryMessenger:self
                                                    codec:[FlutterJSONMessageCodec sharedInstance]];
 }
@@ -352,6 +362,9 @@ static void CommonInit(FLEViewController* controller) {
     NSLog(@"Failed to start Flutter engine: error %d", result);
     return NO;
   }
+  // Send the initial user settings such as brightness and text scale factor
+  // to the engine.
+  [self sendInitialSettings];
   return YES;
 }
 
@@ -479,6 +492,28 @@ static void CommonInit(FLEViewController* controller) {
   }];
 }
 
+- (void)onSettingsChanged:(NSNotification*)notification {
+  // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32015.
+  NSString* brightness =
+      [[NSUserDefaults standardUserDefaults] stringForKey:@"AppleInterfaceStyle"];
+  [_settingsChannel sendMessage:@{
+    @"platformBrightness" : [brightness isEqualToString:@"Dark"] ? @"dark" : @"light",
+    // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32006.
+    @"textScaleFactor" : @1.0,
+    @"alwaysUse24HourFormat" : @false
+  }];
+}
+
+- (void)sendInitialSettings {
+  // TODO(jonahwilliams): https://github.com/flutter/flutter/issues/32015.
+  [[NSDistributedNotificationCenter defaultCenter]
+      addObserver:self
+         selector:@selector(onSettingsChanged:)
+             name:@"AppleInterfaceThemeChangedNotification"
+           object:nil];
+  [self onSettingsChanged:nil];
+}
+
 #pragma mark - FLEReshapeListener
 
 /**
@@ -527,6 +562,14 @@ static void CommonInit(FLEViewController* controller) {
   [channel setMethodCallHandler:^(FlutterMethodCall* call, FlutterResult result) {
     [delegate handleMethodCall:call result:result];
   }];
+}
+
+#pragma mark - FLEPluginRegistry
+
+- (id<FLEPluginRegistrar>)registrarForPlugin:(NSString*)pluginName {
+  // Currently, the view controller acts as the registrar for all plugins, so the
+  // name is ignored.
+  return self;
 }
 
 #pragma mark - NSResponder

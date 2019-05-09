@@ -5,11 +5,13 @@
 #ifndef FLUTTER_SHELL_PLATFORM_GLFW_CLIENT_WRAPPER_INCLUDE_FLUTTER_FLUTTER_WINDOW_CONTROLLER_H_
 #define FLUTTER_SHELL_PLATFORM_GLFW_CLIENT_WRAPPER_INCLUDE_FLUTTER_FLUTTER_WINDOW_CONTROLLER_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <flutter_glfw.h>
 
+#include "flutter_window.h"
 #include "plugin_registrar.h"
 
 namespace flutter {
@@ -33,6 +35,10 @@ class FlutterWindowController {
 
   ~FlutterWindowController();
 
+  // Prevent copying.
+  FlutterWindowController(FlutterWindowController const&) = delete;
+  FlutterWindowController& operator=(FlutterWindowController const&) = delete;
+
   // Creates and displays a window for displaying Flutter content.
   //
   // The |assets_path| is the path to the flutter_assets folder for the Flutter
@@ -46,6 +52,7 @@ class FlutterWindowController {
   // Only one Flutter window can exist at a time; see constructor comment.
   bool CreateWindow(int width,
                     int height,
+                    const std::string& title,
                     const std::string& assets_path,
                     const std::vector<std::string>& arguments);
 
@@ -56,12 +63,9 @@ class FlutterWindowController {
   FlutterDesktopPluginRegistrarRef GetRegistrarForPlugin(
       const std::string& plugin_name);
 
-  // Enables or disables hover tracking.
-  //
-  // If hover is enabled, mouse movement will send hover events to the Flutter
-  // engine, rather than only tracking the mouse while the button is pressed.
-  // Defaults to off.
-  void SetHoverEnabled(bool enabled);
+  // The FlutterWindow managed by this controller, if any. Returns nullptr
+  // before CreateWindow is called, and after RunEventLoop returns;
+  FlutterWindow* window() { return window_.get(); }
 
   // Loops on Flutter window events until the window closes.
   void RunEventLoop();
@@ -74,8 +78,11 @@ class FlutterWindowController {
   // Whether or not FlutterDesktopInit succeeded at creation time.
   bool init_succeeded_ = false;
 
-  // The curent Flutter window, if any.
-  FlutterDesktopWindowRef window_ = nullptr;
+  // The owned FlutterWindow, if any.
+  std::unique_ptr<FlutterWindow> window_;
+
+  // Handle for interacting with the C API's window controller, if any.
+  FlutterDesktopWindowControllerRef controller_ = nullptr;
 };
 
 }  // namespace flutter
