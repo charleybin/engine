@@ -14,6 +14,7 @@
 #include "flutter/flow/skia_gpu_object.h"
 #include "flutter/fml/build_config.h"
 #include "flutter/fml/memory/weak_ptr.h"
+#include "flutter/fml/synchronization/waitable_event.h"
 #include "flutter/lib/ui/io_manager.h"
 #include "flutter/lib/ui/isolate_name_server/isolate_name_server.h"
 #include "flutter/lib/ui/painting/image_decoder.h"
@@ -48,6 +49,8 @@ class UIDartState : public tonic::DartState {
 
   void FlushMicrotasksNow();
 
+  fml::WeakPtr<IOManager> GetIOManager() const;
+
   fml::RefPtr<flutter::SkiaUnrefQueue> GetSkiaUnrefQueue() const;
 
   fml::WeakPtr<SnapshotDelegate> GetSnapshotDelegate() const;
@@ -80,6 +83,7 @@ class UIDartState : public tonic::DartState {
               TaskObserverRemove remove_callback,
               fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
               fml::WeakPtr<IOManager> io_manager,
+              fml::RefPtr<SkiaUnrefQueue> skia_unref_queue,
               fml::WeakPtr<ImageDecoder> image_decoder,
               std::string advisory_script_uri,
               std::string advisory_script_entrypoint,
@@ -103,6 +107,7 @@ class UIDartState : public tonic::DartState {
   const TaskObserverRemove remove_callback_;
   fml::WeakPtr<SnapshotDelegate> snapshot_delegate_;
   fml::WeakPtr<IOManager> io_manager_;
+  fml::RefPtr<SkiaUnrefQueue> skia_unref_queue_;
   fml::WeakPtr<ImageDecoder> image_decoder_;
   const std::string advisory_script_uri_;
   const std::string advisory_script_entrypoint_;

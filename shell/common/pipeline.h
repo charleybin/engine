@@ -78,7 +78,7 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
     Continuation continuation_;
     size_t trace_id_;
 
-    ProducerContinuation(Continuation continuation, size_t trace_id)
+    ProducerContinuation(const Continuation& continuation, size_t trace_id)
         : continuation_(continuation), trace_id_(trace_id) {
       TRACE_FLOW_BEGIN("flutter", "PipelineItem", trace_id_);
       TRACE_EVENT_ASYNC_BEGIN0("flutter", "PipelineItem", trace_id_);
@@ -89,7 +89,7 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
   };
 
   explicit Pipeline(uint32_t depth)
-      : depth_(depth), empty_(depth), available_(0) {}
+      : depth_(depth), empty_(depth), available_(0), inflight_(0) {}
 
   ~Pipeline() = default;
 
@@ -99,6 +99,11 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
     if (!empty_.TryWait()) {
       return {};
     }
+    ++inflight_;
+    FML_TRACE_COUNTER("flutter", "Pipeline Depth",
+                      reinterpret_cast<int64_t>(this),      //
+                      "frames in flight", inflight_.load()  //
+    );
 
     return ProducerContinuation{
         std::bind(&Pipeline::ProducerCommit, this, std::placeholders::_1,
@@ -122,8 +127,9 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
 
   using Consumer = std::function<void(ResourcePtr)>;
 
+  /// @note Procedure doesn't copy all closures.
   FML_WARN_UNUSED_RESULT
-  PipelineConsumeResult Consume(Consumer consumer) {
+  PipelineConsumeResult Consume(const Consumer& consumer) {
     if (consumer == nullptr) {
       return PipelineConsumeResult::NoneAvailable;
     }
@@ -149,6 +155,7 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
     }
 
     empty_.Signal();
+    --inflight_;
 
     TRACE_FLOW_END("flutter", "PipelineItem", trace_id);
     TRACE_EVENT_ASYNC_END0("flutter", "PipelineItem", trace_id);
@@ -158,9 +165,10 @@ class Pipeline : public fml::RefCountedThreadSafe<Pipeline<R>> {
   }
 
  private:
-  uint32_t depth_;
+  const uint32_t depth_;
   fml::Semaphore empty_;
   fml::Semaphore available_;
+  std::atomic<int> inflight_;
   std::mutex queue_mutex_;
   std::deque<std::pair<ResourcePtr, size_t>> queue_;
 

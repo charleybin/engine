@@ -118,10 +118,8 @@ sk_sp<SkImage> MultiFrameCodec::GetNextFrameImage(
   if (resourceContext) {
     SkPixmap pixmap(bitmap.info(), bitmap.pixelRef()->pixels(),
                     bitmap.pixelRef()->rowBytes());
-    // This indicates that we do not want a "linear blending" decode.
-    sk_sp<SkColorSpace> dstColorSpace = nullptr;
     return SkImage::MakeCrossContextFromPixmap(resourceContext.get(), pixmap,
-                                               true, dstColorSpace.get());
+                                               true);
   } else {
     // Defer decoding until time of draw later on the GPU thread. Can happen
     // when GL operations are currently forbidden such as in the background
@@ -170,11 +168,11 @@ Dart_Handle MultiFrameCodec::getNextFrame(Dart_Handle callback_handle) {
       [callback = std::make_unique<DartPersistentValue>(
            tonic::DartState::Current(), callback_handle),
        this, trace_id, ui_task_runner = task_runners.GetUITaskRunner(),
-       queue = UIDartState::Current()->GetSkiaUnrefQueue(),
-       context = dart_state->GetResourceContext()]() mutable {
-        GetNextFrameAndInvokeCallback(std::move(callback),
-                                      std::move(ui_task_runner), context,
-                                      std::move(queue), trace_id);
+       io_manager = dart_state->GetIOManager()]() mutable {
+        GetNextFrameAndInvokeCallback(
+            std::move(callback), std::move(ui_task_runner),
+            io_manager->GetResourceContext(), io_manager->GetSkiaUnrefQueue(),
+            trace_id);
       }));
 
   return Dart_Null();

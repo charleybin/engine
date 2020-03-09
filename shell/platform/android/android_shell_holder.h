@@ -11,6 +11,7 @@
 #include "flutter/fml/platform/android/jni_weak_ref.h"
 #include "flutter/fml/unique_fd.h"
 #include "flutter/lib/ui/window/viewport_metrics.h"
+#include "flutter/runtime/window_data.h"
 #include "flutter/shell/common/run_configuration.h"
 #include "flutter/shell/common/shell.h"
 #include "flutter/shell/common/thread_host.h"
@@ -29,11 +30,6 @@ class AndroidShellHolder {
   bool IsValid() const;
 
   void Launch(RunConfiguration configuration);
-
-  void SetViewportMetrics(const flutter::ViewportMetrics& metrics);
-
-  void DispatchPointerDataPacket(
-      std::unique_ptr<flutter::PointerDataPacket> packet);
 
   const flutter::Settings& GetSettings() const;
 

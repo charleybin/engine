@@ -11,6 +11,7 @@
 #include "flutter/shell/platform/darwin/common/framework/Headers/FlutterBinaryMessenger.h"
 #include "flutter/shell/platform/darwin/common/framework/Headers/FlutterChannels.h"
 #include "flutter/shell/platform/darwin/ios/framework/Headers/FlutterPlatformViews.h"
+#include "flutter/shell/platform/darwin/ios/framework/Headers/FlutterPlugin.h"
 
 // A UIView that is used as the parent for embedded UIViews.
 //
@@ -19,7 +20,9 @@
 // 2. Dispatching all events that are hittested to the embedded view to the FlutterView.
 @interface FlutterTouchInterceptingView : UIView
 - (instancetype)initWithEmbeddedView:(UIView*)embeddedView
-               flutterViewController:(UIViewController*)flutterViewController;
+               flutterViewController:(UIViewController*)flutterViewController
+    gestureRecognizersBlockingPolicy:
+        (FlutterPlatformViewGestureRecognizersBlockingPolicy)blockingPolicy;
 
 // Stop delaying any active touch sequence (and let it arrive the embedded view).
 - (void)releaseGesture;
@@ -63,6 +66,11 @@ struct FlutterPlatformViewLayer {
   fml::scoped_nsobject<UIView> overlay_view;
   std::unique_ptr<IOSSurface> ios_surface;
   std::unique_ptr<Surface> surface;
+
+  // The GrContext that is currently used by the overlay surfaces.
+  // We track this to know when the GrContext for the Flutter app has changed
+  // so we can update the overlay with the new context.
+  GrContext* gr_context;
 };
 
 class FlutterPlatformViewsController {
@@ -75,11 +83,12 @@ class FlutterPlatformViewsController {
 
   void SetFlutterViewController(UIViewController* flutter_view_controller);
 
-  void RegisterViewFactory(NSObject<FlutterPlatformViewFactory>* factory, NSString* factoryId);
+  void RegisterViewFactory(
+      NSObject<FlutterPlatformViewFactory>* factory,
+      NSString* factoryId,
+      FlutterPlatformViewGestureRecognizersBlockingPolicy gestureRecognizerBlockingPolicy);
 
   void SetFrameSize(SkISize frame_size);
-
-  bool HasPendingViewOperations();
 
   void CancelFrame();
 
@@ -93,6 +102,8 @@ class FlutterPlatformViewsController {
   // returns nil.
   NSObject<FlutterPlatformView>* GetPlatformViewByID(int view_id);
 
+  PostPrerollResult PostPrerollAction(fml::RefPtr<fml::GpuThreadMerger> gpu_thread_merger);
+
   std::vector<SkCanvas*> GetCurrentCanvases();
 
   SkCanvas* CompositeEmbeddedView(int view_id);
@@ -100,9 +111,7 @@ class FlutterPlatformViewsController {
   // Discards all platform views instances and auxiliary resources.
   void Reset();
 
-  bool SubmitFrame(bool gl_rendering,
-                   GrContext* gr_context,
-                   std::shared_ptr<IOSGLContext> gl_context);
+  bool SubmitFrame(GrContext* gr_context, std::shared_ptr<IOSGLContext> gl_context);
 
   void OnMethodCall(FlutterMethodCall* call, FlutterResult& result);
 
@@ -125,11 +134,15 @@ class FlutterPlatformViewsController {
   // platform view last time it was composited.
   std::map<int64_t, int64_t> clip_count_;
   std::map<int64_t, std::unique_ptr<FlutterPlatformViewLayer>> overlays_;
-  // The GrContext that is currently used by all of the overlay surfaces.
-  // We track this to know when the GrContext for the Flutter app has changed
-  // so we can update the overlays with the new context.
-  GrContext* overlays_gr_context_;
   SkISize frame_size_;
+
+  // This is the number of frames the task runners will stay
+  // merged after a frame where we see a mutation to the embedded views.
+  // Note: This number was arbitrarily picked. The rationale being
+  // merge-unmerge are not zero cost operations. To account for cases
+  // like animating platform views, we picked it to be > 2, as we would
+  // want to avoid merge-unmerge during each frame with a mutation.
+  static const int kDefaultMergedLeaseDuration = 10;
 
   // Method channel `OnDispose` calls adds the views to be disposed to this set to be disposed on
   // the next frame.
@@ -145,6 +158,10 @@ class FlutterPlatformViewsController {
   // Only compoiste platform views in this set.
   std::unordered_set<int64_t> views_to_recomposite_;
 
+  // The FlutterPlatformViewGestureRecognizersBlockingPolicy for each type of platform view.
+  std::map<std::string, FlutterPlatformViewGestureRecognizersBlockingPolicy>
+      gesture_recognizers_blocking_policies;
+
   std::map<int64_t, std::unique_ptr<SkPictureRecorder>> picture_recorders_;
 
   void OnCreate(FlutterMethodCall* call, FlutterResult& result);
@@ -155,10 +172,13 @@ class FlutterPlatformViewsController {
   void DetachUnusedLayers();
   // Dispose the views in `views_to_dispose_`.
   void DisposeViews();
-  void EnsureOverlayInitialized(int64_t overlay_id);
-  void EnsureGLOverlayInitialized(int64_t overlay_id,
-                                  std::shared_ptr<IOSGLContext> gl_context,
-                                  GrContext* gr_context);
+  void EnsureOverlayInitialized(int64_t overlay_id,
+                                std::shared_ptr<IOSGLContext> gl_context,
+                                GrContext* gr_context);
+
+  // This will return true after pre-roll if any of the embedded views
+  // have mutated for last layer tree.
+  bool HasPendingViewOperations();
 
   // Traverse the `mutators_stack` and return the number of clip operations.
   int CountClips(const MutatorsStack& mutators_stack);

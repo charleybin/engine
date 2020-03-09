@@ -18,7 +18,7 @@
 #include "flutter/fml/memory/thread_checker.h"
 #include "flutter/fml/memory/weak_ptr.h"
 #include "flutter/fml/status.h"
-#include "flutter/fml/synchronization/thread_annotations.h"
+#include "flutter/fml/synchronization/sync_switch.h"
 #include "flutter/fml/synchronization/waitable_event.h"
 #include "flutter/fml/thread.h"
 #include "flutter/lib/ui/semantics/custom_accessibility_action.h"
@@ -34,6 +34,18 @@
 #include "flutter/shell/common/surface.h"
 
 namespace flutter {
+
+/// Error exit codes for the Dart isolate.
+enum class DartErrorCode {
+  /// No error has occurred.
+  NoError = 0,
+  /// The Dart error code for an API error.
+  ApiError = 253,
+  /// The Dart error code for a compilation error.
+  CompilationError = 254,
+  /// The Dart error code for an unkonwn error.
+  UnknownError = 255
+};
 
 //------------------------------------------------------------------------------
 /// Perhaps the single most important class in the Flutter engine repository.
@@ -63,7 +75,8 @@ namespace flutter {
 /// platform task runner. In case the embedder wants to directly access a shell
 /// subcomponent, it is the embedder's responsibility to acquire a weak pointer
 /// to that component and post a task to the task runner used by the component
-/// to access its methods.
+/// to access its methods. The shell must also be destroyed on the platform
+/// task runner.
 ///
 /// There is no explicit API to bootstrap and shutdown the Dart VM. The first
 /// instance of the shell in the process bootstraps the Dart VM and the
@@ -110,6 +123,44 @@ class Shell final : public PlatformView::Delegate,
   static std::unique_ptr<Shell> Create(
       TaskRunners task_runners,
       Settings settings,
+      const CreateCallback<PlatformView>& on_create_platform_view,
+      const CreateCallback<Rasterizer>& on_create_rasterizer);
+
+  //----------------------------------------------------------------------------
+  /// @brief      Creates a shell instance using the provided settings. The
+  ///             callbacks to create the various shell subcomponents will be
+  ///             called on the appropriate threads before this method returns.
+  ///             Unlike the simpler variant of this factory method, this method
+  ///             allows for specification of window data. If this is the first
+  ///             instance of a shell in the process, this call also bootstraps
+  ///             the Dart VM.
+  ///
+  /// @param[in]  task_runners             The task runners
+  /// @param[in]  window_data              The default data for setting up
+  ///                                      ui.Window that attached to this
+  ///                                      intance.
+  /// @param[in]  settings                 The settings
+  /// @param[in]  on_create_platform_view  The callback that must return a
+  ///                                      platform view. This will be called on
+  ///                                      the platform task runner before this
+  ///                                      method returns.
+  /// @param[in]  on_create_rasterizer     That callback that must provide a
+  ///                                      valid rasterizer. This will be called
+  ///                                      on the render task runner before this
+  ///                                      method returns.
+  ///
+  /// @return     A full initialized shell if the settings and callbacks are
+  ///             valid. The root isolate has been created but not yet launched.
+  ///             It may be launched by obtaining the engine weak pointer and
+  ///             posting a task onto the UI task runner with a valid run
+  ///             configuration to run the isolate. The embedder must always
+  ///             check the validity of the shell (using the IsSetup call)
+  ///             immediately after getting a pointer to it.
+  ///
+  static std::unique_ptr<Shell> Create(
+      TaskRunners task_runners,
+      const WindowData window_data,
+      Settings settings,
       CreateCallback<PlatformView> on_create_platform_view,
       CreateCallback<Rasterizer> on_create_rasterizer);
 
@@ -123,11 +174,11 @@ class Shell final : public PlatformView::Delegate,
   ///             requires the specification of a running VM instance.
   ///
   /// @param[in]  task_runners             The task runners
+  /// @param[in]  window_data              The default data for setting up
+  ///                                      ui.Window that attached to this
+  ///                                      intance.
   /// @param[in]  settings                 The settings
   /// @param[in]  isolate_snapshot         A custom isolate snapshot. Takes
-  ///                                      precedence over any snapshots
-  ///                                      specified in the settings.
-  /// @param[in]  shared_snapshot          A custom shared snapshot. Takes
   ///                                      precedence over any snapshots
   ///                                      specified in the settings.
   /// @param[in]  on_create_platform_view  The callback that must return a
@@ -150,11 +201,11 @@ class Shell final : public PlatformView::Delegate,
   ///
   static std::unique_ptr<Shell> Create(
       TaskRunners task_runners,
+      const WindowData window_data,
       Settings settings,
       fml::RefPtr<const DartSnapshot> isolate_snapshot,
-      fml::RefPtr<const DartSnapshot> shared_snapshot,
-      CreateCallback<PlatformView> on_create_platform_view,
-      CreateCallback<Rasterizer> on_create_rasterizer,
+      const CreateCallback<PlatformView>& on_create_platform_view,
+      const CreateCallback<Rasterizer>& on_create_rasterizer,
       DartVMRef vm);
 
   //----------------------------------------------------------------------------
@@ -164,6 +215,19 @@ class Shell final : public PlatformView::Delegate,
   ///             this method returns.
   ///
   ~Shell();
+
+  //----------------------------------------------------------------------------
+  /// @brief      Starts an isolate for the given RunConfiguration.
+  ///
+  void RunEngine(RunConfiguration run_configuration);
+
+  //----------------------------------------------------------------------------
+  /// @brief      Starts an isolate for the given RunConfiguration. The
+  ///             result_callback will be called with the status of the
+  ///             operation.
+  ///
+  void RunEngine(RunConfiguration run_configuration,
+                 const std::function<void(Engine::RunStatus)>& result_callback);
 
   //------------------------------------------------------------------------------
   /// @return     The settings used to launch this shell.
@@ -189,10 +253,12 @@ class Shell final : public PlatformView::Delegate,
   ///
   /// @return     A weak pointer to the rasterizer.
   ///
-  fml::WeakPtr<Rasterizer> GetRasterizer();
+  fml::WeakPtr<Rasterizer> GetRasterizer() const;
 
   //------------------------------------------------------------------------------
-  /// @brief      Engines may only be accessed on the UI thread.
+  /// @brief      Engines may only be accessed on the UI thread. This method is
+  ///             deprecated, and implementers should instead use other API
+  ///             available on the Shell or the PlatformView.
   ///
   /// @return     A weak pointer to the engine.
   ///
@@ -253,6 +319,47 @@ class Shell final : public PlatformView::Delegate,
   ///
   fml::Status WaitForFirstFrame(fml::TimeDelta timeout);
 
+  //----------------------------------------------------------------------------
+  /// @brief      Used by embedders to reload the system fonts in
+  /// FontCollection.
+  ///             It also clears the cached font families and send system
+  ///             channel message to framework to rebuild affected widgets.
+  ///
+  /// @return     Returns if shell reloads system fonts successfully.
+  ///
+  bool ReloadSystemFonts();
+
+  //----------------------------------------------------------------------------
+  /// @brief      Used by embedders to get the last error from the Dart UI
+  ///             Isolate, if one exists.
+  ///
+  /// @return     Returns the last error code from the UI Isolate.
+  ///
+  std::optional<DartErrorCode> GetUIIsolateLastError() const;
+
+  //----------------------------------------------------------------------------
+  /// @brief      Used by embedders to check if the Engine is running and has
+  ///             any live ports remaining. For example, the Flutter tester uses
+  ///             this method to check whether it should continue to wait for
+  ///             a running test or not.
+  ///
+  /// @return     Returns if the shell has an engine and the engine has any live
+  ///             Dart ports.
+  ///
+  bool EngineHasLivePorts() const;
+
+  //----------------------------------------------------------------------------
+  /// @brief     Accessor for the disable GPU SyncSwitch
+  std::shared_ptr<fml::SyncSwitch> GetIsGpuDisabledSyncSwitch() const;
+
+  //----------------------------------------------------------------------------
+  /// @brief      Get a pointer to the Dart VM used by this running shell
+  ///             instance.
+  ///
+  /// @return     The Dart VM pointer.
+  ///
+  DartVM* GetDartVM();
+
  private:
   using ServiceProtocolHandler =
       std::function<bool(const ServiceProtocol::Handler::ServiceProtocolMap&,
@@ -265,6 +372,7 @@ class Shell final : public PlatformView::Delegate,
   std::unique_ptr<Engine> engine_;               // on UI task runner
   std::unique_ptr<Rasterizer> rasterizer_;       // on GPU task runner
   std::unique_ptr<ShellIOManager> io_manager_;   // on IO task runner
+  std::shared_ptr<fml::SyncSwitch> is_gpu_disabled_sync_switch_;
 
   fml::WeakPtr<Engine> weak_engine_;          // to be shared across threads
   fml::WeakPtr<Rasterizer> weak_rasterizer_;  // to be shared across threads
@@ -298,6 +406,13 @@ class Shell final : public PlatformView::Delegate,
   // here for easier conversions to Dart objects.
   std::vector<int64_t> unreported_timings_;
 
+  // A cache of `Engine::GetDisplayRefreshRate` (only callable in the UI thread)
+  // so we can access it from `Rasterizer` (in the GPU thread).
+  //
+  // The atomic is for extra thread safety as this is written in the UI thread
+  // and read from the GPU thread.
+  std::atomic<float> display_refresh_rate_ = 0.0f;
+
   // How many frames have been timed since last report.
   size_t UnreportedFramesCount() const;
 
@@ -306,18 +421,16 @@ class Shell final : public PlatformView::Delegate,
   static std::unique_ptr<Shell> CreateShellOnPlatformThread(
       DartVMRef vm,
       TaskRunners task_runners,
+      const WindowData window_data,
       Settings settings,
       fml::RefPtr<const DartSnapshot> isolate_snapshot,
-      fml::RefPtr<const DartSnapshot> shared_snapshot,
-      Shell::CreateCallback<PlatformView> on_create_platform_view,
-      Shell::CreateCallback<Rasterizer> on_create_rasterizer);
+      const Shell::CreateCallback<PlatformView>& on_create_platform_view,
+      const Shell::CreateCallback<Rasterizer>& on_create_rasterizer);
 
   bool Setup(std::unique_ptr<PlatformView> platform_view,
              std::unique_ptr<Engine> engine,
              std::unique_ptr<Rasterizer> rasterizer,
              std::unique_ptr<ShellIOManager> io_manager);
-
-  DartVM* GetDartVM();
 
   void ReportTimings();
 
@@ -362,7 +475,7 @@ class Shell final : public PlatformView::Delegate,
   void OnPlatformViewMarkTextureFrameAvailable(int64_t texture_id) override;
 
   // |PlatformView::Delegate|
-  void OnPlatformViewSetNextFrameCallback(fml::closure closure) override;
+  void OnPlatformViewSetNextFrameCallback(const fml::closure& closure) override;
 
   // |Animator::Delegate|
   void OnAnimatorBeginFrame(fml::TimePoint frame_time) override;
@@ -400,6 +513,9 @@ class Shell final : public PlatformView::Delegate,
 
   // |Rasterizer::Delegate|
   void OnFrameRasterized(const FrameTiming&) override;
+
+  // |Rasterizer::Delegate|
+  fml::Milliseconds GetFrameBudget() override;
 
   // |ServiceProtocol::Handler|
   fml::RefPtr<fml::TaskRunner> GetServiceProtocolHandlerTaskRunner(
@@ -446,6 +562,10 @@ class Shell final : public PlatformView::Delegate,
       rapidjson::Document& response);
 
   fml::WeakPtrFactory<Shell> weak_factory_;
+
+  // For accessing the Shell via the GPU thread, necessary for various
+  // rasterizer callbacks.
+  std::unique_ptr<fml::WeakPtrFactory<Shell>> weak_factory_gpu_;
 
   friend class testing::ShellTest;
 

@@ -19,6 +19,7 @@ UIDartState::UIDartState(
     TaskObserverRemove remove_callback,
     fml::WeakPtr<SnapshotDelegate> snapshot_delegate,
     fml::WeakPtr<IOManager> io_manager,
+    fml::RefPtr<SkiaUnrefQueue> skia_unref_queue,
     fml::WeakPtr<ImageDecoder> image_decoder,
     std::string advisory_script_uri,
     std::string advisory_script_entrypoint,
@@ -30,6 +31,7 @@ UIDartState::UIDartState(
       remove_callback_(std::move(remove_callback)),
       snapshot_delegate_(std::move(snapshot_delegate)),
       io_manager_(std::move(io_manager)),
+      skia_unref_queue_(std::move(skia_unref_queue)),
       image_decoder_(std::move(image_decoder)),
       advisory_script_uri_(std::move(advisory_script_uri)),
       advisory_script_entrypoint_(std::move(advisory_script_entrypoint)),
@@ -80,11 +82,12 @@ const TaskRunners& UIDartState::GetTaskRunners() const {
   return task_runners_;
 }
 
+fml::WeakPtr<IOManager> UIDartState::GetIOManager() const {
+  return io_manager_;
+}
+
 fml::RefPtr<flutter::SkiaUnrefQueue> UIDartState::GetSkiaUnrefQueue() const {
-  if (!io_manager_) {
-    return nullptr;
-  }
-  return io_manager_->GetSkiaUnrefQueue();
+  return skia_unref_queue_;
 }
 
 void UIDartState::ScheduleMicrotask(Dart_Handle closure) {

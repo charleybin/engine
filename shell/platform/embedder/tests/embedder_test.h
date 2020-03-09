@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "flutter/fml/macros.h"
-#include "flutter/shell/platform/embedder/tests/embedder_context.h"
+#include "flutter/shell/platform/embedder/tests/embedder_test_context.h"
 #include "flutter/testing/testing.h"
 #include "flutter/testing/thread_test.h"
 
@@ -19,20 +19,12 @@ class EmbedderTest : public ThreadTest {
  public:
   EmbedderTest();
 
-  ~EmbedderTest() override;
-
   std::string GetFixturesDirectory() const;
 
-  EmbedderContext& GetEmbedderContext();
+  EmbedderTestContext& GetEmbedderContext();
 
  private:
-  std::unique_ptr<EmbedderContext> embedder_context_;
-
-  // |testing::Test|
-  void SetUp() override;
-
-  // |testing::Test|
-  void TearDown() override;
+  std::unique_ptr<EmbedderTestContext> embedder_context_;
 
   FML_DISALLOW_COPY_AND_ASSIGN(EmbedderTest);
 };
